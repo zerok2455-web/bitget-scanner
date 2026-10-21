@@ -1,5 +1,5 @@
 import telebot, requests, os
-TOKEN = os.getenv("BOT_TOKEN", "8877158919:AAFhftP18l6-ooMGdLtDuFUt95e8DcXFUv4")
+TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 def get_tickers():
     try:
