@@ -1,12 +1,15 @@
-for t in s:
-            if t["symbol"].endswith("USDT"): spot[t["symbol"]]=float(t.get("change24h",0))
-    except: pass
-    try:
-        f=requests.get("https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES",timeout=12).json()["data"]
-        for t in f:
-            if t["symbol"].endswith("USDT"): fut[t["symbol"]]=float(t.get("change24h",0))
-    except: pass
-    return spot, fut
+import telebot, requests, time, math, os
+from flask import Flask
+import threading
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN не найден в Environment Variables!")
+
+bot = telebot.TeleBot(BOT_TOKEN)
+app = Flask(__name__)
+@app.route('/')
+def home(): return "Bitget SPOT+FUTURES+MARGIN+LEVERAGE LIVE!"
 
 @bot.message_handler(commands=['start'])
 def start(m): bot.reply_to(m,"💎 FULL BOT\n/scan - ВСЁ СРАЗУ\n/futures - фьючи с плечом\n/margin - маржа\n/signal BTCUSDT")
