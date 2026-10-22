@@ -1,7 +1,7 @@
 import telebot, requests, time, math, threading, os
 from flask import Flask
 from datetime import datetime
-BOT_TOKEN = 8877158919:AAF_ZZdRg5xKXhKOQD_9y0JLG_aIxA06VpU
+BOT_TOKEN = "8877158919:AAF_ZZdRg5xKXhKOQD_9y0JLG_aIxA06VpU"
 CHAT_ID = None  # можно оставить None
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
