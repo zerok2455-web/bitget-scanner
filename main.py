@@ -1,9 +1,8 @@
 import telebot, requests, time, math, threading, os
 from flask import Flask
 from datetime import datetime
-BOT_TOKEN = "8877158919:AAF_ZZdRg5xKXhKOQD_9y0JLG_aIxA06VpU"
-CHAT_ID = None  # можно оставить None
 
+BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Токен теперь из настроек Render!
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
 app = Flask(__name__)
