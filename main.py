@@ -1,8 +1,7 @@
-import os, threading, time, requests, io
+import os, threading, time, requests, io, json, urllib.parse
 import telebot
 from telebot import types
 from flask import Flask
-from PIL import Image, ImageDraw, ImageFont
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
@@ -10,7 +9,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Lucifer Live - PIL Candles"
+    return "Lucifer Live - No Build"
 
 def get_spot_tickers():
     try:
@@ -28,68 +27,48 @@ def get_candles(symbol, granularity="1h", limit=60):
     except:
         return []
 
-def make_candle_image_pil(symbol, granularity="1h"):
-    candles = get_candles(symbol, granularity, 60)
-    if len(candles) < 20:
+def make_candle_image(symbol, granularity="1h"):
+    candles = get_candles(symbol, granularity, 50)
+    if len(candles) < 10:
         return None
     try:
-        opens = [float(c[1]) for c in candles][-50:]
-        highs = [float(c[2]) for c in candles][-50:]
-        lows = [float(c[3]) for c in candles][-50:]
-        closes = [float(c[4]) for c in candles][-50:]
-    except:
+        # данные для quickchart: [{o,h,l,c},...]
+        data = []
+        for c in candles[-40:]:
+            o = float(c[1]); h = float(c[2]); l = float(c[3]); cl = float(c[4])
+            data.append({"o":o,"h":h,"l":l,"c":cl})
+
+        chart_config = {
+            "type": "candlestick",
+            "data": {
+                "datasets": [{
+                    "label": symbol,
+                    "data": data,
+                    "color": {"up": "#26a69a", "down": "#ef5350", "unchanged": "#888888"}
+                }]
+            },
+            "options": {
+                "title": {"display": True, "text": f"{symbol} {granularity} - Lucifer"},
+                "backgroundColor": "#131722",
+                "legend": {"labels": {"fontColor": "white"}},
+            }
+        }
+        encoded = urllib.parse.quote(json.dumps(chart_config))
+        url = f"https://quickchart.io/chart?c={encoded}&width=800&height=400&backgroundColor=%23131722&format=png"
+
+        r = requests.get(url, timeout=20)
+        if r.status_code == 200:
+            buf = io.BytesIO(r.content)
+            buf.seek(0)
+            return buf
         return None
-
-    W, H = 1000, 400
-    pad = 40
-    img = Image.new('RGB', (W, H), '#131722')
-    draw = ImageDraw.Draw(img)
-
-    min_price = min(lows)
-    max_price = max(highs)
-    price_range = max_price - min_price
-    if price_range == 0:
-        price_range = 1
-
-    def y_of(price):
-        return H - pad - (price - min_price) / price_range * (H - pad*2)
-
-    # grid
-    for i in range(4):
-        y = pad + i * (H - pad*2)//4
-        draw.line([(pad, y), (W-10, y)], fill='#2a2e39', width=1)
-
-    candle_w = (W - pad - 20) // len(closes)
-    candle_body = max(2, candle_w - 2)
-
-    for i in range(len(closes)):
-        o, h, l, c = opens[i], highs[i], lows[i], closes[i]
-        x = pad + i * candle_w + candle_w//2
-        color = '#26a69a' if c >= o else '#ef5350'
-
-        # wick
-        draw.line([(x, y_of(l)), (x, y_of(h))], fill=color, width=1)
-        # body
-        top = y_of(max(o,c))
-        bot_y = y_of(min(o,c))
-        bh = max(2, bot_y - top)
-        draw.rectangle([x-candle_body//2, top, x+candle_body//2, top+bh], fill=color, outline=color)
-
-    # title
-    try:
-        draw.text((pad, 8), f"{symbol} {granularity} - Lucifer", fill='white')
-        draw.text((pad, H-18), f"Low {min_price:.4f} | High {max_price:.4f}", fill='#888888')
-    except:
-        pass
-
-    buf = io.BytesIO()
-    img.save(buf, format='PNG')
-    buf.seek(0)
-    return buf
+    except Exception as e:
+        print(f"chart error {e}")
+        return None
 
 def make_buttons(symbol):
     markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_c = types.InlineKeyboardButton("🕯️ Свечи", callback_data=f"chart_{symbol}")
+    btn_c = types.InlineKeyboardButton("🕯️ Свечи красно/зеленые", callback_data=f"chart_{symbol}")
     btn_b = types.InlineKeyboardButton("🟢 Bitget", url=f"https://www.bitget.com/spot/{symbol.replace('USDT','')}_USDT")
     btn_5 = types.InlineKeyboardButton("⏱️ 5м", callback_data=f"chart5m_{symbol}")
     btn_r = types.InlineKeyboardButton(f"🔄 {symbol}", callback_data=f"refresh_{symbol}")
@@ -101,7 +80,7 @@ def make_buttons(symbol):
 def handle_scan(m):
     is_scan2 = "scan2" in m.text
     thresh = 2 if is_scan2 else 4
-    bot.send_message(m.chat.id, f"🔍 +{thresh}%")
+    bot.send_message(m.chat.id, f"🔍 Сканирую +{thresh}%...")
     tickers = get_spot_tickers()
     tickers = sorted(tickers, key=lambda x: float(x.get("change24h",0)), reverse=True)
     cnt=0
@@ -122,30 +101,36 @@ def callbacks(call):
         d=call.data
         if d.startswith("chart_") and "chart5m" not in d:
             sym=d.replace("chart_","")
-            bot.answer_callback_query(call.id)
+            bot.answer_callback_query(call.id, f"Рисую свечи {sym}...")
             bot.send_chat_action(call.message.chat.id, 'upload_photo')
-            img=make_candle_image_pil(sym,"1h")
-            if img: bot.send_photo(call.message.chat.id, img, caption=f"🕯️ {sym} 1H", reply_markup=make_buttons(sym))
+            img=make_candle_image(sym,"1h")
+            if img:
+                bot.send_photo(call.message.chat.id, img, caption=f"🕯️ {sym} 1H - зеленый рост / красный падение", reply_markup=make_buttons(sym))
+            else:
+                bot.send_message(call.message.chat.id, f"Не смог загрузить график {sym}")
         elif d.startswith("chart5m_"):
             sym=d.replace("chart5m_","")
             bot.answer_callback_query(call.id)
             bot.send_chat_action(call.message.chat.id, 'upload_photo')
-            img=make_candle_image_pil(sym,"5m")
-            if img: bot.send_photo(call.message.chat.id, img, caption=f"⏱️ {sym} 5м", reply_markup=make_buttons(sym))
+            img=make_candle_image(sym,"5m")
+            if img:
+                bot.send_photo(call.message.chat.id, img, caption=f"⏱️ {sym} 5м свечи", reply_markup=make_buttons(sym))
         elif d.startswith("refresh_"):
             sym=d.replace("refresh_","")
             bot.answer_callback_query(call.id)
-            img=make_candle_image_pil(sym,"1h")
-            if img: bot.send_photo(call.message.chat.id, img, caption=f"🔄 {sym}", reply_markup=make_buttons(sym))
+            img=make_candle_image(sym,"1h")
+            if img:
+                bot.send_photo(call.message.chat.id, img, caption=f"🔄 {sym}", reply_markup=make_buttons(sym))
     except Exception as e:
-        print(f"cb error {e}")
+        print(f"cb err {e}")
 
 def run_bot():
     while True:
         try:
+            print("Polling start")
             bot.infinity_polling(timeout=90, long_polling_timeout=60, none_stop=True)
         except Exception as e:
-            print(f"poll {e}")
+            print(f"poll err {e}")
             time.sleep(5)
 
 if __name__ == '__main__':
