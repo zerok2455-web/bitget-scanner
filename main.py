@@ -6,7 +6,21 @@ from flask import Flask
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
-
+# --- Меню команд (та самая кнопка что ты обвел) ---
+try:
+    bot.set_my_commands([
+        types.BotCommand("start", "🚀 Главное меню"),
+        types.BotCommand("scan", "🚀 Пампы от 4%"),
+        types.BotCommand("scan2", "⚡ Ранние пампы от 2%"),
+        types.BotCommand("top5m", "🔥 Топ за 5 минут"),
+        types.BotCommand("funding", "💰 Фандинг"),
+        types.BotCommand("calc", "🧮 Калькулятор"),
+        types.BotCommand("auto", "🤖 Авто-скан"),
+        types.BotCommand("futures", "📈 Фьючерсы"),
+    ])
+    print("Меню команд установлено")
+except Exception as e:
+    print(f"menu err {e}")
 @app.route('/')
 def home():
     return "Lucifer Scanner RU Live"
