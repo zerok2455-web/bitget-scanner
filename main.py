@@ -6,7 +6,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 @app.route("/")
-def home(): return "V3.2 FIXED"
+def home(): return "V3.3 FINAL FIX"
 
 margin_cache=set()
 leverage_cache={}
@@ -25,12 +25,13 @@ def load_markets():
         if r.get("code")=="00000":
             for c in r["data"]: leverage_cache[c["symbol"]]=c.get("maxLever","125")
     except: pass
+
 load_markets()
 
 def get_klines(symbol):
     try:
         r=requests.get(f"https://api.bitget.com/api/v2/mix/market/candles?symbol={symbol}&productType=USDT-FUTURES&granularity=5m&limit=100",timeout=10).json()
-        if r.get("code")=="00000":
+        if r.get("code")=="00000" and r["data"]:
             d=list(reversed(r["data"]))
             return [float(x[4]) for x in d],[float(x[3]) for x in d],[float(x[2]) for x in d],[float(x[5]) for x in d]
     except: pass
@@ -39,12 +40,20 @@ def get_klines(symbol):
 def get_tickers():
     spot={}; fut={}
     try:
-        for t in requests.get("https://api.bitget.com/api/v2/spot/market/tickers",timeout=10).json()["data"]:
-            if t["symbol"].endswith("USDT") and t["symbol"] not in BLACKLIST: spot[t["symbol"]]=float(t.get("change24h",0))
+        data=requests.get("https://api.bitget.com/api/v2/spot/market/tickers",timeout=10).json().get("data",[])
+        for t in data:
+            try:
+                if t["symbol"].endswith("USDT") and t["symbol"] not in BLACKLIST:
+                    spot[t["symbol"]]=float(t.get("change24h",0))
+            except: continue
     except: pass
     try:
-        for t in requests.get("https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES",timeout=10).json()["data"]:
-            if t["symbol"].endswith("USDT") and t["symbol"] not in BLACKLIST: fut[t["symbol"]]=float(t.get("change24h",0))
+        data=requests.get("https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES",timeout=12).json().get("data",[])
+        for t in data:
+            try:
+                if t["symbol"].endswith("USDT") and t["symbol"] not in BLACKLIST:
+                    fut[t["symbol"]]=float(t.get("change24h",0))
+            except: continue
     except: pass
     return spot,fut
 
@@ -77,11 +86,11 @@ def analyze(closes,lows,highs,vols):
 def format_msg(sym,cs,cf,a):
     price,sup,res,pos,rsi,vol,signal,emoji,el,eh,sl,t1,t2,t3,conf=a
     lev=leverage_cache.get(sym,"125")
-    return f"💎 {sym}\n{emoji} {signal} {conf}% | RSI {rsi:.0f} | VOL x{vol:.1f}\nFUT +{cf:.1f}% SPOT +{cs:.1f}% | {lev}x\nЦена: {price:.6f}\nВХОД: {el:.6f}-{eh:.6f}\nСТОП: {sl:.6f}\nЦели: {t1:.6f} | {t2:.6f} | {t3:.6f}\nS:{sup:.6f} R:{res:.6f}"
+    return f"💎 {sym}\n{emoji} {signal} {conf}% | RSI {rsi:.0f} | VOL x{vol:.1f}\nFUT +{cf:.1f}% SPOT +{cs:.1f}% | {lev}x\nЦена: {price:.6f}\nВХОД: {el:.6f}-{eh:.6f}\nСТОП: {sl:.6f}\nЦели: {t1:.6f} | {t2:.6f} | {t3:.6f}\nS:{sup:.6f} R:{res:.6f} Поз:{pos:.0f}%"
 
 @bot.message_handler(commands=["start","help"])
 def start(m):
-    bot.reply_to(m,"✅ V3.2 FIXED\n/scan +4% LONG/SHORT RSI\n/scan2 от +0.5% (пофиксил)\n/top5m ранний памп\n/futures\n/calc 100 20 4\n/auto\n/funding BTCUSDT")
+    bot.reply_to(m,"✅ V3.3 FINAL\n/scan +4% LONG/SHORT\n/scan2 от +0.5% FIX\n/top5m ранний памп\n/futures\n/calc 100 20 4\n/auto\n/funding BTCUSDT")
 
 @bot.message_handler(commands=["scan"])
 def scan_cmd(m):
@@ -99,29 +108,38 @@ def scan_cmd(m):
 @bot.message_handler(commands=["scan2"])
 def scan2_cmd(m):
     bot.reply_to(m,"⏳ Сканирую от +0.5%...")
-    spot,fut=get_tickers()
-    alls=set(list(spot.keys())+list(fut.keys()))
-    top=[(s,spot.get(s,0),fut.get(s,0),max(spot.get(s,0),fut.get(s,0))) for s in alls if max(spot.get(s,0),fut.get(s,0))>2]
-    if not top: # ФОЛБЭК ЕСЛИ НЕТ +2%
+    try:
+        spot,fut=get_tickers()
+        alls=set(list(spot.keys())+list(fut.keys()))
         top=[(s,spot.get(s,0),fut.get(s,0),max(spot.get(s,0),fut.get(s,0))) for s in alls if max(spot.get(s,0),fut.get(s,0))>0.5]
-    top=sorted(top,key=lambda x:x[3],reverse=True)[:6]
-    if not top: bot.send_message(m.chat.id,"Рынок мертвый даже +0.5% нет 😴"); return
-    for sym,cs,cf,_ in top:
-        c,l,h,v=get_klines(sym)
-        if not c: continue
-        bot.send_message(m.chat.id, format_msg(sym,cs,cf,analyze(c,l,h,v)))
+        top=sorted(top,key=lambda x:x[3],reverse=True)[:6]
+        if not top:
+            bot.send_message(m.chat.id,f"Рынок мертвый: spot {len(spot)} fut {len(fut)} монет\nПопробуй /top5m")
+            return
+        txt="🔥 Топ от +0.5%:\n"
+        for s,cs,cf,_ in top:
+            txt+=f"• {s} FUT +{cf:.2f}% SPOT +{cs:.2f}% {leverage_cache.get(s,'?')}x\n"
+        bot.send_message(m.chat.id, txt)
+        for sym,cs,cf,_ in top[:3]:
+            c,l,h,v=get_klines(sym)
+            if not c: continue
+            bot.send_message(m.chat.id, format_msg(sym,cs,cf,analyze(c,l,h,v)))
+    except Exception as e:
+        bot.send_message(m.chat.id,f"Ошибка scan2: {e}")
 
 @bot.message_handler(commands=["top5m"])
 def top5m_cmd(m):
     bot.reply_to(m,"⏳ Топ 5м...")
     _,fut=get_tickers()
     cands=[]
-    for sym in list(fut.keys())[:50]:
+    for sym in list(fut.keys())[:60]:
         c,l,h,v=get_klines(sym)
         if not c or len(c)<3: continue
         vola=abs(c[-1]-c[-2])/c[-2]*100
         if vola>0.3: cands.append((sym,vola))
-    for sym,vola in sorted(cands,key=lambda x:x[1],reverse=True)[:5]:
+    cands=sorted(cands,key=lambda x:x[1],reverse=True)[:5]
+    if not cands: bot.send_message(m.chat.id,"Нет движения 5м 😴"); return
+    for sym,vola in cands:
         c,l,h,v=get_klines(sym)
         if not c: continue
         bot.send_message(m.chat.id, f"⚡ {sym} +{vola:.2f}% за 5м\n"+format_msg(sym,0,fut.get(sym,0),analyze(c,l,h,v)))
@@ -130,7 +148,7 @@ def top5m_cmd(m):
 def fut_cmd(m):
     _,fut=get_tickers()
     top=sorted([(s,v) for s,v in fut.items() if v>4],key=lambda x:x[1],reverse=True)[:6]
-    if not top: bot.send_message(m.chat.id,"Нет FUT +4% 😴 /scan2 для +0.5%"); return
+    if not top: bot.send_message(m.chat.id,"Нет FUT +4% 😴"); return
     for s,v in top: bot.send_message(m.chat.id, f"🔥 {s} +{v:.1f}% {leverage_cache.get(s,'125')}x")
 
 @bot.message_handler(commands=["calc"])
