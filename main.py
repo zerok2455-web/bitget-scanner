@@ -75,4 +75,4 @@ def analyze(closes,lows,highs,vols):
     pos=(price-sup)/range_size*100 if range_size!=0 else 50
     rsi=rsi_calc(closes)
     avg_vol=sum(vols[-20:-1])/19 if len(vols)>20 else sum(vols)/len(vols)
-    vol_spike=vols[-1]/avg_vol if avg
+    vol_spike=vols[-1]/avg_vol if avg_vol else 0
